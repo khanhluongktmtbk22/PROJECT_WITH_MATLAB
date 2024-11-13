@@ -1,0 +1,33 @@
+clc
+clear all
+syms x y z ld
+f=input('Enter the function f(x,y,z) ');
+g=input('Enter the constraint g(x,y,z) ');
+H=f+ld*g;
+Hx=diff(H,x);
+Hy=diff(H,y);
+Hz=diff(H,z);
+Hld=diff(H,ld);
+[ax, ay, az, ald]=solve(Hx, Hy, Hz, Hld, x, y, z, ld, 'Real', true)
+d=zeros(length(ax),1);
+for i=1:length(ax)
+    d(i)=subs(subs(subs(f,x,ax(i)), y, ay(i)), z, az(i));
+end
+d=sort(d);
+f_min=d(1);
+f_max=d(end);
+if f_min==f_max
+    Ht=subs(subs(g,x,ax(1)+pi/1000), y, ay(1)+pi/1000);
+    a=solve(Ht, z);
+    dt=subs(subs(subs(f,x,ax(1)+pi/1000), y, ay(1)+pi/1000), z, a);
+    if dt<=f_max 
+        fprintf('The maximum value of f is %f\n', f_max);
+        fprintf('No minimum value of f \n');
+    else
+        fprintf('The minimum value of f is %f\n', f_min);
+        fprintf('No maximum value of f');
+    end
+else
+fprintf('The minimum value of f is %f\n', f_min);
+fprintf('The maximum value of f is %f', f_max);
+end
