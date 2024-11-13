@@ -1,0 +1,26 @@
+% Hamming Code (7,4) 
+clear
+% Input Data
+data = [1 1 0 0]; % 4-bit data
+G = [1 0 0 0; 0 1 0 0; 0 0 1 0; 0 0 0 1; 0 1 1 1; 1 0 1 1; 1 1 0 1];% matrix ma hoa
+tx_data = mod(data*G',2); % ma hoa du lieu
+% tao ra loi nhan duoc
+err = [0 0 1 0 0 0 0];
+rx_data = mod(tx_data + err,2); % data duoc nhan
+% Hamming Code (7,4) Decoder
+H = [0 0 0 1 1 1 1 ; 0 1 1 0 0 1 1; 1 0 1 0 1 0 1];%matrix giai ma
+syndrome = mod(rx_data*H',2); % calculate 3-bit syndrome
+error = zeros(1,7);% tao matrix 0
+syndromed = sum(syndrome .* 2.^(length(syndrome)-1:-1:0));% gia tri thap phan cua syndrome
+if syndromed ~= 0
+    error(syndromed) = 1; % determine error location using syndrome
+end
+corrected_data = mod(rx_data+error,2); % correct errors in received data
+corrected_data_4bit=corrected_data(1:4);% correct data 4 bit
+% Output Results
+disp(['Input Data: ', num2str(data)]);
+disp(['Transmitted Data: ', num2str(tx_data)]);
+disp(['Received Data: ', num2str(rx_data)]);
+disp(['Corrected Data 7 bit: ', num2str(corrected_data)]);
+disp(['vi tri loi (tinh tu trai sang) ', num2str(syndromed)]);
+disp(['Corrected Data 4 bit: ', num2str(corrected_data_4bit)]);
