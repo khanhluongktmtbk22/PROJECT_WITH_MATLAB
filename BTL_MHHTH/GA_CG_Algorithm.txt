@@ -1,0 +1,290 @@
+%logLength = [4800; 5400; 6000];
+%lengthlist = [980; 1120; 1140; 1460; 1650; 2200; 2316];
+%quantity = [969; 1179; 4686; 554; 468; 254; 789];
+%logLength = [25; 50; 60; 70; 100];
+%lengthlist = [45; 36; 30; 15; 17; 12; 8];
+%quantity = [7; 5; 8; 9; 4; 10; 6];
+logLength = [100; 70];
+lengthlist = [45; 36; 30; 15];
+quantity = [7; 5; 8; 9];
+M = length(logLength); % số gene trong mỗi cá thể
+m = length(quantity);
+K = 50; % kích thước của quần thể
+n_generation = 10; % số thế hệ
+elitism = 2;
+global kq;
+population = [];
+fitness_value = [];
+
+
+function DCSP(logLength, lengthlist, quantity)
+nLengths = length(lengthlist);
+patterns = []; % Khởi tạo patterns là một ma trận rỗng
+Str_logLength = [];
+for j = 1:numel(logLength)
+    patterns_t = diag(floor(logLength(j)./lengthlist));
+    patterns = [patterns patterns_t];
+    vector_col = ones(nLengths, 1) * logLength(j);
+    Str_logLength = [Str_logLength; vector_col];
+end
+%patterns = diag(floor(logLength(1)./lengthlist));
+%Str_logLength = ones(nLengths, 1) * logLength(1);
+nPatterns = size(patterns,2); %so cot cua patterns
+lb2 = zeros(nLengths,1); %ma tran cot
+A2 = lengthlist';
+lpopts = optimoptions('linprog','Display','off');
+ipopts = optimoptions('intlinprog',lpopts);
+reducedCost = -Inf;
+reducedCostTolerance = -0.00001;
+exitflag = 1;
+while reducedCost < reducedCostTolerance && exitflag > 0
+   % nPatterns = size(patterns,2);
+    lb = zeros(nPatterns,1);
+    f = Str_logLength;
+    A = -patterns;
+    b = -quantity;
+ 
+    [values,nLogs,exitflag,~,lambda] = linprog(f,A,b,[],[],lb,[],lpopts); 
+    if exitflag > 0 % exitflag = 1 tìm thấy giải pháp tối ưu
+        % Now generate a new pattern, if possible
+        f2 = -lambda.ineqlin;
+        reducedCost_list = [];
+        newpattern_list = [];
+        for j = 1:numel(logLength)
+            b2 = logLength(j);
+            [values,reducedCost,pexitflag] = intlinprog(f2,1:nLengths,A2,b2,[],[],lb2,[],ipopts);
+            if pexitflag > 0
+            reducedCost = b2 + reducedCost; % continue if this reducedCost is negative
+            reducedCost_list = [reducedCost_list reducedCost];
+            newpattern_list = [newpattern_list values];
+            else
+                reducedCost = Inf;
+                reducedCost_list = [reducedCost_list reducedCost];
+                newpattern_list = [newpattern_list values];
+            end
+                
+        end
+        reducedCost = min(reducedCost_list);
+        index = find(reducedCost_list == reducedCost,1);
+        newpattern = round(newpattern_list(:, index));
+        if reducedCost < reducedCostTolerance
+            patterns = [patterns newpattern];
+            nPatterns = nPatterns + 1;
+            Str_logLength = [Str_logLength; logLength(index)];
+        end
+        
+    end
+end
+if exitflag <= 0 
+    disp('Error in column generation phase')
+else
+    [values,logsUsed,exitflag] = intlinprog(f,1:length(lb),A,b,[],[],lb,[],[],ipopts);
+    if exitflag > 0
+        values = round(values);
+        sumt = 0;
+        for j = 1:numel(logLength)
+            for i = 1:numel(Str_logLength)
+                
+                if Str_logLength(i)==logLength(j)
+                    sumt = sumt + values(i);
+                end
+            end
+            if sumt ~= 0
+            fprintf('Uses %g logs with length is %g\n', sumt, logLength(j));
+            end
+            sumt = 0;
+        end
+        for j = 1:numel(values)
+            if values(j) > 0
+                fprintf('Cut %g logs %g with pattern\n',values(j), Str_logLength(j));
+                for w = 1:size(patterns,1)
+                    if patterns(w,j) > 0
+                        fprintf('    %d cut(s) of length %d\n', patterns(w,j),lengthlist(w));
+                    end
+                end
+                wastej = Str_logLength(j) - dot(patterns(:,j),lengthlist); % waste due to pattern inefficiency
+            fprintf('    Waste of this pattern is %g\n', wastej);
+            end
+        end
+        %totalwaste = sum(Str_logLength.*values)-sum(lengthlist.*quantity);
+        %fprintf('Total waste in this problem is %g.\n', totalwaste);
+    else 
+        disp('Error in final optimization')
+    end
+end
+end
+function random_number = generate_random_number(n)
+    random_number = randi(n+1) - 1; % Sinh số ngẫu nhiên từ 0 đến n
+end
+function individual = create_individual(M, b)
+    individual = zeros(length(b), M);
+    for i = 1:length(b)
+        sum = 0;
+        j = 1;
+        while j < M
+            individual(i, j) = generate_random_number(b(i));
+            sum = sum + individual(i, j);
+            j = j + 1;
+            if sum > b(i)
+                j = 1;
+                sum = 0;
+            end
+        end
+        individual(i, M) = b(i) - sum;
+    end
+end
+
+function fitness = compute_fitness(L, lengthlist, individual, M)
+fitness = 0;
+for i = 1:M
+logLength = L(i);
+quantity = individual(:,i);
+nLengths = length(lengthlist);
+patterns = diag(floor(logLength./lengthlist));
+nPatterns = size(patterns,2);
+lb2 = zeros(nLengths,1);
+A2 = lengthlist';
+b2 = logLength;
+lpopts = optimoptions('linprog','Display','off');
+ipopts = optimoptions('intlinprog',lpopts);
+reducedCost = -Inf;
+reducedCostTolerance = -0.0001;
+exitflag = 1;
+while reducedCost < reducedCostTolerance && exitflag > 0
+    lb = zeros(nPatterns,1);
+    f = lb + 1;
+    A = -patterns;
+    b = -quantity;
+    
+    [~,~,exitflag,~,lambda] = linprog(f,A,b,[],[],lb,[],lpopts); 
+    if exitflag > 0
+        % Now generate a new pattern, if possible
+        f2 = -lambda.ineqlin;
+        [values,reducedCost,pexitflag] = intlinprog(f2,1:nLengths,A2,b2,[],[],lb2,[],ipopts);
+        reducedCost = 1 + reducedCost; % continue if this reducedCost is negative
+        newpattern = round(values);
+        if pexitflag > 0 && reducedCost < reducedCostTolerance
+            patterns = [patterns newpattern];
+            nPatterns = nPatterns + 1;
+        end
+    end
+end
+if exitflag <= 0 
+    fitness = Inf;
+    break;
+    %disp('Error in column generation phase')
+else
+    [values,logsUsed,exitflag] = intlinprog(f,1:length(lb),A,b,[],[],lb,[],[],ipopts);
+    if exitflag > 0
+        values = round(values);
+        logsUsed = round(logsUsed);
+        fitness = fitness + logsUsed*L(i);
+    end
+end
+end
+
+%fitness = 1/fitness;
+end
+
+% Hàm lai ghép
+function [individual1, individual2] = crossover(parent1, parent2, m)
+    crossoverPoint = generate_random_number(m-1) + 1;
+    individual1 = [parent1(1:crossoverPoint,:); parent2(crossoverPoint+1:end,:)];
+    individual2 = [parent2(1:crossoverPoint,:); parent1(crossoverPoint+1:end,:)];
+end
+
+% Hàm đột biến
+function mutant = mutate(individual, M, m)
+    p = generate_random_number(M-1) + 1;
+    q = generate_random_number(M-1) + 1;
+    r = generate_random_number(m-1) + 1;
+    mutant = individual;
+    if individual(r, p) > 0
+        mutant(r, p) = mutant(r, p) -1;
+        mutant(r, q) = mutant(r, q) +1;
+    end
+end
+
+% Hàm chọn lọc
+function selectedPopulation = selection(population, K, M)
+    index1 = generate_random_number(K-1);
+    while true
+        index2 = generate_random_number(K-1);
+        if index1 ~= index2
+            break;
+        end
+    end
+    index1 = index1*M+1;
+    index2 = index2*M+1;
+    selectedPopulation = population(:,index1:index1+M-1);
+    if index2 < index1
+        selectedPopulation = population(:,index2:index2+M-1);
+    end
+end
+function new_population = create_new_population(old_population, fitness_value, logLength, lengthlist, elitism, K, M, m)
+    global kq;
+    sorted_population = [];
+    new_population = [];
+    fitness_value_t = [];
+    for i = 0:(K-1)
+        fitness_value = [fitness_value compute_fitness(logLength, lengthlist, old_population(:,i*M+1:i*M+M), M)];
+    end
+    for i = 1:K
+        minvalue = min(fitness_value);
+        fitness_value_t = [fitness_value_t minvalue];
+        indexmin = find(fitness_value == minvalue, 1)-1;
+        fitness_value(indexmin+1) = Inf;
+        indexmin = indexmin*M+1;
+        sorted_population = [sorted_population old_population(:,indexmin:indexmin+M-1)];
+    end
+    fitness_value = fitness_value_t;
+    new_population = [new_population sorted_population(:,1:elitism*M)];
+    while size(new_population,2)/M <= K
+    individual_s1 = selection(sorted_population, K, M);
+    individual_s2 = selection(sorted_population, K, M);
+    
+    [individual_c1, individual_c2] = crossover(individual_s1, individual_s2, m);
+
+    individual_m1 = mutate(individual_c1, M, m);
+    individual_m2 = mutate(individual_c2, M, m);
+
+    new_population = [new_population individual_m1 individual_m2];
+    end
+    for i = 0:(K-1)
+        individual_t = old_population(:,i*M+1:i*M+M);
+        individual_m = mutate(individual_t, M, m);
+        new_population = [new_population individual_m];
+    end
+    fitness_value = [];
+    fitness_value_t = [];
+    sorted_population = [];
+    for i = 0:(2*K-1)
+        fitness_value = [fitness_value compute_fitness(logLength, lengthlist, new_population(:,i*M+1:i*M+M), M)];
+    end
+    for i = 1:(2*K)
+        minvalue = min(fitness_value);
+        fitness_value_t = [fitness_value_t minvalue];
+        indexmin = find(fitness_value == minvalue, 1)-1;
+        fitness_value(indexmin+1) = Inf;
+        indexmin = indexmin*M+1;
+        sorted_population = [sorted_population new_population(:,indexmin:indexmin+M-1)];
+    end
+    new_population = sorted_population(:, 1:K*M);
+    %fitness_value = [];
+    fitness_value = fitness_value_t(:, 1:K);
+    kq = fitness_value(1);
+end
+demand = sum(lengthlist.*quantity);
+for i=1:K
+    individual_t = create_individual(M, quantity);
+    population = [population individual_t];
+end
+for i = 1:n_generation
+    population = create_new_population(population, fitness_value, logLength, lengthlist, elitism, K, M, m);
+end
+individual_min = population(:, 1:M);
+totalwaste = kq - demand;
+fprintf('Total waste in this problem is %g.\n', totalwaste);
+for i = 1:M
+    DCSP(logLength(i), lengthlist, individual_min(:, i));
+end
